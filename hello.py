@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import sys
+from struct import *
 from time import sleep
 import xml.etree.ElementTree as ET
 import socket
@@ -13,27 +14,31 @@ class Client:
     def __init__(self, socket_path):
         self.socket_path = socket_path
 
+    def Create(self):
+        self.s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.s.connect(self.socket_path)
+
     def SendXML(self, source):
-        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        s.connect(self.socket_path)
         size = len(source)
         sys.stdout.write("{} \n".format(str(size)))
-        if(s.send(str(size).encode('utf-8'))):
+        #if(self.s.send(str(size).encode('utf-8'))):
+        if(self.s.send(pack('i',size))):
             sleep(0.01)
-            if(s.send(source)):
+            if(self.s.send(source)):
                 sleep(0.01)
-        s.close()
 
     def GetXml(self):
-        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        s.connect(self.socket_path)
-        size=s.recv(16)
-        if(size>0):
-            sys.stdout.write(size)
-            source=s.recv(int(size))
-        s.close()
+        sys.stdout.write("wait")
+        row_size=unpack('i',self.s.recv(4))
+        size=row_size[0]
+        sys.stdout.write("{} \n".format(size))
+        if(int(size)>0):
+            source=self.s.recv(int(size)).decode()
+            sys.stdout.write("{} \n".format(source))
         return str(source)
 
+    def Close(self):
+        self.s.close()
 
 
 
@@ -56,8 +61,8 @@ class XmlCreate:
 class XmlParse:
     def __init__(self, source):
         self.transport=ET.fromstring(source)
-        self.header=transport.find(".//header")
-        self.body=transport.find(".//body")
+        self.header=self.transport.find(".//header")
+        self.body=self.transport.find(".//body")
 
     def header(self):
         method=self.header.find(".//method")
@@ -93,8 +98,10 @@ def login():
         sys.stdout.write("auth")
         xmlcreate = XmlCreate()
         client = Client(SOCK_FILENAME)
+        client.Create()
         client.SendXML(xmlcreate.auth(request.form['username'], request.form['password']))
         xmlparse = XmlParse(client.GetXml())
+        client.Close()
         userid = xmlparse.userid()
         if(userid is not None):
             session['userid'] = userid
