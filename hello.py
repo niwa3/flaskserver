@@ -58,9 +58,11 @@ class XmlCreate:
         password.text = p
         return ET.tostring(self.transport, 'utf-8')
 
-    def newnode(self, nid, uid, plvl, ntype, dtype, inter, loca):
+    def newnode(self, nid, uid, plvl, ntype, dtype, inter, loca, r_id):
         method=ET.SubElement(self.header, "method")
         method.text = "register_newnode"
+        requestid=ET.SubElement(self.header, "id")
+        requestid.text = r_id
         node=ET.SubElement(self.body, "node")
         nodeid=ET.SubElement(node, "nodeid")
         userid=ET.SubElement(node, "userid")
@@ -78,9 +80,11 @@ class XmlCreate:
         location.text = loca
         return ET.tostring(self.transport, 'utf-8')
 
-    def newservice(self, sid, vid, plvl, dtype, inter):
+    def newservice(self, sid, vid, plvl, dtype, inter, r_id):
         method=ET.SubElement(self.header, "method")
         method.text = "register_newservice"
+        requestid=ET.SubElement(self.header, "id")
+        requestid.text = r_id
         service=ET.SubElement(self.body, "service")
         serviceid=ET.SubElement(service, "serviceid")
         venderid=ET.SubElement(service, "venderid")
@@ -94,9 +98,11 @@ class XmlCreate:
         interval.text = inter
         return ET.tostring(self.transport, 'utf-8')
 
-    def changeprivacy(self, sid, nid, plvl):
+    def changeprivacy(self, sid, nid, plvl, r_id):
         method=ET.SubElement(self.header, "method")
         method.text = "privacy"
+        requestid=ET.SubElement(self.header, "id")
+        requestid.text = r_id
         privacy=ET.SubElement(self.body, "privacy")
         serviceid=ET.SubElement(privacy, "serviceid")
         nodeid=ET.SubElement(privacy, "nodeid")
@@ -106,19 +112,44 @@ class XmlCreate:
         privacy_lvl.text =plvl
         return ET.tostring(self.transport, 'utf-8')
 
+    def deletenode(self, nid, r_id):
+        method=ET.SubElement(self.header, "method")
+        method.text = "delete_node"
+        requestid=ET.SubElement(self.header, "id")
+        requestid.text = r_id
+        deleteid=ET.SubElement(self.body, "deleteid")
+        nodeid=ET.SubElement(deleteid, "nodeid")
+        nodeid.text=nid
+        return ET.tostring(self.transport, 'utf-8')
+
+    def deleteservice(self, sid, r_id):
+        method=ET.SubElement(self.header, "method")
+        method.text = "delete_service"
+        requestid=ET.SubElement(self.header, "id")
+        requestid.text = r_id
+        deleteid=ET.SubElement(self.body, "deleteid")
+        serviceid=ET.SubElement(deleteid, "serviceid")
+        serviceid.text=sid
+        return ET.tostring(self.transport, 'utf-8')
+
 
 
 class XmlParse:
     def __init__(self, source):
         self.transport=ET.fromstring(source)
-        self.header=self.transport.find(".//header")
-        self.body=self.transport.find(".//body")
 
-    def header(self):
+    def id_(self):
+        self.header=self.transport.find(".//header")
+        requestid=self.header.find(".//id")
+        return requestid.text
+
+    def method(self):
+        self.header=self.transport.find(".//header")
         method=self.header.find(".//method")
         return method.text
 
     def userid(self):
+        self.body=self.transport.find(".//body")
         userid=self.body.find(".//userid")
         return userid.text
 
@@ -173,13 +204,20 @@ def home():
 
 @app.route('/home/newnode', methods=['GET','POST'])
 def register_new_node():
+    success=None
     if request.method == 'POST':
         xmlcreate = XmlCreate()
         client = Client(SOCK_FILENAME)
         client.Create()
-        client.SendXML(xmlcreate.newnode(request.form['nodeid'], request.form['userid'], request.form['privacy_lvl'], request.form['node_type'], request.form['data_type'], str(request.form['interval']), request.form['location']))
+        client.SendXML(xmlcreate.newnode(request.form['nodeid'], request.form['userid'], request.form['privacy_lvl'], request.form['node_type'], request.form['data_type'], str(request.form['interval']), request.form['location'], session.get("userid")))
+        res_xml=client.GetXml()
+        if res_xml is not None:
+            xmlparse = XmlParse(res_xml)
+            success = xmlparse.method()
+            return render_template('newnode.html', userid = session.get("userid"), success=success)
         client.Close()
-    return render_template('newnode.html', userid = session.get("userid"))
+        success="err"
+    return render_template('newnode.html', userid = session.get("userid"), success=success)
 
 @app.route('/home/newservice', methods=['GET','POST'])
 def register_new_service():
@@ -187,8 +225,14 @@ def register_new_service():
         xmlcreate = XmlCreate()
         client = Client(SOCK_FILENAME)
         client.Create()
-        client.SendXML(xmlcreate.newservice(request.form['serviceid'], request.form['venderid'], request.form['privacy_lvl'], request.form['data_type'], str(request.form['interval'])))
+        client.SendXML(xmlcreate.newservice(request.form['serviceid'], request.form['venderid'], request.form['privacy_lvl'], request.form['data_type'], str(request.form['interval']), session.get("userid")))
+        res_xml=client.GetXml()
+        if res_xml is not None:
+            xmlparse = XmlParse(res_xml)
+            success=xmlparse.method()
+            return render_template('newservice.html', userid = session.get("userid"), success=success)
         client.Close()
+        success="err"
     return render_template('newservice.html', userid = session.get("userid"))
 
 @app.route('/home/relation',methods=['GET','POST'])
@@ -197,9 +241,48 @@ def change_privacy_lvl():
         xmlcreate = XmlCreate()
         client = Client(SOCK_FILENAME)
         client.Create()
-        client.SendXML(xmlcreate.changeprivacy(request.form['serviceid'], request.form['nodeid'], request.form['privacy_lvl']))
+        client.SendXML(xmlcreate.changeprivacy(request.form['serviceid'], request.form['nodeid'], request.form['privacy_lvl'], session.get("userid")))
+        res_xml=client.GetXml()
+        if res_xml is not None:
+            xmlparse = XmlParse(res_xml)
+            success=xmlparse.method()
+            return render_template('relation.html', userid = session.get("userid"), success=success)
         client.Close()
+        success="err"
     return render_template('relation.html', userid = session.get("userid"))
+
+@app.route('/home/node_deletion',methods=['GET','POST'])
+def delete_node():
+    if request.method == 'POST':
+        xmlcreate = XmlCreate()
+        client = Client(SOCK_FILENAME)
+        client.Create()
+        client.SendXML(xmlcreate.deletenode(request.form['nodeid'], session.get("userid")))
+        res_xml=client.GetXml()
+        if res_xml is not None:
+            xmlparse = XmlParse(res_xml)
+            success=xmlparse.method()
+            return render_template('delete_node.html', userid = session.get("userid"), success=success)
+        client.Close()
+        success="err"
+    return render_template('delete_node.html', userid = session.get("userid"))
+
+@app.route('/home/service_deletion',methods=['GET','POST'])
+def delete_service():
+    if request.method == 'POST':
+        xmlcreate = XmlCreate()
+        client = Client(SOCK_FILENAME)
+        client.Create()
+        client.SendXML(xmlcreate.deleteservice(request.form['serviceid'], session.get("userid")))
+        res_xml=client.GetXml()
+        if res_xml is not None:
+            xmlparse = XmlParse(res_xml)
+            success=xmlparse.method()
+            return render_template('delete_service.html', userid = session.get("userid"), success=success)
+        client.Close()
+        success="err"
+    return render_template('delete_service.html', userid = session.get("userid"))
+
 
 @app.route('/logout', methods=['GET'])
 def logout():
